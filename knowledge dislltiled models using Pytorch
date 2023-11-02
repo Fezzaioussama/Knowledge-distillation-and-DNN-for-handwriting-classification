@@ -63,8 +63,8 @@ student_model = StudentModel()
 criterion = nn.CrossEntropyLoss()
 #distillation_criterion = nn.KLDivLoss()
 # Define optimizer for the student model
-optimizer = optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
-
+optimizer1 = optim.Adam(teacher_model.parameters(), lr=0.001)
+optimizer2 = optim.Adam(student_model.parameters(), lr=0.001)
 
 
 # Training loop for Teacher model model
@@ -74,7 +74,7 @@ T=0.5
 for epoch in range(num_epochs):
     teacher_model.train()
     for inputs, labels in train_dataset:
-        optimizer.zero_grad()
+        optimizer1.zero_grad()
 
         # Forward pass through the models
         teacher_logits = teacher_model(inputs.unsqueeze(0))
@@ -84,7 +84,7 @@ for epoch in range(num_epochs):
         total_loss = ce_loss
 
         total_loss.backward()
-        optimizer.step()
+        optimizer1.step()
 
 # Training loop for student model
 num_epochs = 1
@@ -93,7 +93,7 @@ T=0.5
 for epoch in range(num_epochs):
     student_model.train()
     for inputs, labels in train_dataset:
-        optimizer.zero_grad()
+        optimizer2.zero_grad()
 
         # Forward pass through the models
         teacher_logits = teacher_model(inputs.unsqueeze(0))
@@ -104,7 +104,7 @@ for epoch in range(num_epochs):
         total_loss = ce_loss + (alpha * distillation_loss)
 
         total_loss.backward()
-        optimizer.step()
+        optimizer2.step()
 
 # Validation loop
 student_model.eval()

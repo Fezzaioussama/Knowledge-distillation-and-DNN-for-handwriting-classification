@@ -1,0 +1,138 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+
+# Define a simple CNN teacher model (larger model)
+class TeacherModel(nn.Module):
+    def __init__(self):
+        super(TeacherModel, self).__init__()
+        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
+        self.fc = nn.Linear(32 * 32 * 32, 10)  # Example: 10 classes
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+# Define a simpler CNN student model
+class StudentModel(nn.Module):
+    def __init__(self):
+        super(StudentModel, self).__init__()
+        self.conv1 = nn.Conv2d(3, 16, 3, padding=1)
+        self.fc = nn.Linear(16 * 32 * 32, 10)  # Example: 10 classes
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+# Load CIFAR-10 dataset as an example
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+train_dataset = datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
+test_dataset = datasets.CIFAR10(root='./data', train=False, transform=transform, download=True)
+
+import torch
+import torch.nn.functional as F
+
+def custom_kl_div_loss(student_logits, teacher_logits, reduction='batchmean'):
+    # Apply softmax to the logits
+    student_probs = F.softmax(student_logits, dim=1)
+    teacher_probs = F.softmax(teacher_logits, dim=1)
+
+    # Compute KL Divergence
+    kl_div = torch.sum(teacher_probs * (torch.log(teacher_probs) - torch.log(student_probs)), dim=1)
+
+    if reduction == 'none':
+        return kl_div
+    elif reduction == 'sum':
+        return torch.sum(kl_div)
+    elif reduction == 'mean':
+        return torch.mean(kl_div)
+    elif reduction == 'batchmean':
+        return torch.mean(kl_div)
+
+# Initialize teacher and student models
+teacher_model = TeacherModel()
+student_model = StudentModel()
+
+# Define loss functions
+criterion = nn.CrossEntropyLoss()
+#distillation_criterion = nn.KLDivLoss()
+# Define optimizer for the student model
+optimizer = optim.SGD(student_model.parameters(), lr=0.001, momentum=0.9)
+
+
+
+# Training loop for Teacher model model
+num_epochs = 1
+alpha = 0.7
+T=0.5
+for epoch in range(num_epochs):
+    teacher_model.train()
+    for inputs, labels in train_dataset:
+        optimizer.zero_grad()
+
+        # Forward pass through the models
+        teacher_logits = teacher_model(inputs.unsqueeze(0))
+        
+        labels = torch.tensor([labels]) 
+        ce_loss = criterion(teacher_logits, labels)
+        total_loss = ce_loss
+
+        total_loss.backward()
+        optimizer.step()
+
+# Training loop for student model
+num_epochs = 1
+alpha = 0.7
+T=0.5
+for epoch in range(num_epochs):
+    student_model.train()
+    for inputs, labels in train_dataset:
+        optimizer.zero_grad()
+
+        # Forward pass through the models
+        teacher_logits = teacher_model(inputs.unsqueeze(0))
+        student_logits = student_model(inputs.unsqueeze(0))
+        labels = torch.tensor([labels]) 
+        ce_loss = criterion(student_logits, labels)
+        distillation_loss = custom_kl_div_loss(student_logits/T,teacher_logits/T)
+        total_loss = ce_loss + (alpha * distillation_loss)
+
+        total_loss.backward()
+        optimizer.step()
+
+# Validation loop
+student_model.eval()
+correct = 0
+total = 0
+
+with torch.no_grad():
+    for inputs, labels in test_dataset:
+        student_logits = student_model(inputs.unsqueeze(0))
+        _, predicted = torch.max(student_logits, 1)
+        total += 1
+        correct += (predicted == labels).sum().item()
+
+print(f'Validation Accuracy: {100 * correct / total:.2f}%')
+
+# Save the trained student model for later use
+torch.save(student_model.state_dict(), 'student_model.pth')
+
+# Testing loop
+student_model.eval()
+correct = 0
+total = 0
+
+with torch.no_grad():
+    for inputs, labels in test_dataset:
+        student_logits = student_model(inputs.unsqueeze(0))
+        _, predicted = torch.max(student_logits, 1)
+        total += 1
+        correct += (predicted == labels).sum().item()
+
+print(f'Test Accuracy: {100 * correct / total:.2f}%')
